@@ -31,7 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "o2c.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "o2c.db")
 
 # ════════════════════════════════════════════════════════════════════════
 #
