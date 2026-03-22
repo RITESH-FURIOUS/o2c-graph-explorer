@@ -51,15 +51,15 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "o2c.db")
 #
 # ════════════════════════════════════════════════════════════════════════
 
-LLM_PROVIDER = "groq"   # ← CHANGE THIS to your chosen provider
+LLM_PROVIDER = "openrouter"
 
 # ── GROQ (Recommended — fast & free) ────────────────────────────────────
 GROQ_API_KEY = "gsk_your_actual_key_here"
 GROQ_MODEL   = "llama-3.3-70b-versatile"
 
 # ── OPENROUTER (Free models available) ──────────────────────────────────
-OPENROUTER_API_KEY = "YOUR_OPENROUTER_API_KEY_HERE"
-OPENROUTER_MODEL   = "meta-llama/llama-3.3-70b-instruct:free"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = "meta-llama/llama-3.3-8b-instruct:free"
 
 # ── OPENAI ───────────────────────────────────────────────────────────────
 OPENAI_API_KEY = "YOUR_OPENAI_API_KEY_HERE"
