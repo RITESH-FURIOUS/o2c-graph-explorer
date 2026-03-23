@@ -1,19 +1,9 @@
 """
 Order-to-Cash Graph Query System - FastAPI Backend
-
-Supports ANY OpenAI-compatible LLM provider:
-  - Groq       (free)  https://console.groq.com
-  - OpenRouter (free)  https://openrouter.ai
-  - Google Gemini      https://ai.google.dev
-  - OpenAI             https://platform.openai.com
-  - Anthropic Claude   https://console.anthropic.com
-  - Ollama (local)     http://localhost:11434
-  - Any other OpenAI-compatible API
-
-Configure in the LLM CONFIG section below.
 """
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import sqlite3
 import json
@@ -26,66 +16,36 @@ app = FastAPI(title="O2C Graph API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "o2c.db")
 
-# ════════════════════════════════════════════════════════════════════════
-#
-#   LLM CONFIG
-#   ─────────────────────────────────────────────────────────────────────
-#   Step 1: Set LLM_PROVIDER to whichever service you want to use
-#   Step 2: Fill in ONLY that provider's API key (ignore the others)
-#
-#   Supported values for LLM_PROVIDER:
-#     "groq"       → Free. Key at https://console.groq.com
-#     "openrouter" → Free tier. Key at https://openrouter.ai
-#     "openai"     → Paid. Key at https://platform.openai.com
-#     "gemini"     → Free tier. Key at https://ai.google.dev
-#     "anthropic"  → Paid. Key at https://console.anthropic.com
-#     "ollama"     → 100% free local. No key. Install https://ollama.com
-#     "custom"     → Any OpenAI-compatible endpoint
-#
-# ════════════════════════════════════════════════════════════════════════
-
 LLM_PROVIDER = "openrouter"
 
-# ── GROQ (Recommended — fast & free) ────────────────────────────────────
-GROQ_API_KEY = "gsk_your_actual_key_here"
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL   = "llama-3.3-70b-versatile"
 
-# ── OPENROUTER (Free models available) ──────────────────────────────────
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = "meta-llama/llama-3.3-8b-instruct:free"
 
-# ── OPENAI ───────────────────────────────────────────────────────────────
-OPENAI_API_KEY = "YOUR_OPENAI_API_KEY_HERE"
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY_HERE")
 OPENAI_MODEL   = "gpt-4o-mini"
 
-# ── GOOGLE GEMINI (Free tier) ────────────────────────────────────────────
-GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY_HERE")
 GEMINI_MODEL   = "gemini-1.5-flash"
 
-# ── ANTHROPIC CLAUDE ─────────────────────────────────────────────────────
-ANTHROPIC_API_KEY = "YOUR_ANTHROPIC_API_KEY_HERE"
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "YOUR_ANTHROPIC_API_KEY_HERE")
 ANTHROPIC_MODEL   = "claude-haiku-4-5-20251001"
 
-# ── OLLAMA — local, no key needed ────────────────────────────────────────
-# Install Ollama: https://ollama.com  then run:  ollama pull llama3
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL    = "llama3"
 
-# ── CUSTOM — any OpenAI-compatible endpoint ───────────────────────────────
 CUSTOM_API_URL = "https://your-endpoint/v1/chat/completions"
 CUSTOM_API_KEY = "YOUR_CUSTOM_KEY_HERE"
 CUSTOM_MODEL   = "your-model-name"
-
-# ════════════════════════════════════════════════════════════════════════
-#   INTERNAL ROUTING — DO NOT EDIT BELOW THIS LINE
-# ════════════════════════════════════════════════════════════════════════
 
 def _resolve(val):
     return val() if callable(val) else val
@@ -140,19 +100,14 @@ PROVIDER_CONFIGS = {
 def _get_provider():
     cfg = PROVIDER_CONFIGS.get(LLM_PROVIDER)
     if not cfg:
-        raise HTTPException(400, f"Unknown LLM_PROVIDER '{LLM_PROVIDER}'. Valid: {list(PROVIDER_CONFIGS)}")
+        raise HTTPException(400, f"Unknown LLM_PROVIDER '{LLM_PROVIDER}'.")
     key = cfg["key"]()
     if LLM_PROVIDER != "ollama" and any(p in str(key) for p in ["YOUR_", "_HERE"]):
-        raise HTTPException(
-            400,
-            f"No API key set for '{LLM_PROVIDER}'. "
-            f"Open backend/main.py and fill in {LLM_PROVIDER.upper()}_API_KEY."
-        )
+        raise HTTPException(400, f"No API key set for '{LLM_PROVIDER}'.")
     return cfg, key
 
 
 async def call_llm(messages: list, system: str = "") -> str:
-    """Call whichever LLM provider is configured."""
     cfg, key = _get_provider()
     style   = cfg["style"]
     model   = cfg["model"]()
@@ -160,7 +115,6 @@ async def call_llm(messages: list, system: str = "") -> str:
     headers = {"Content-Type": "application/json"}
     headers.update(cfg.get("extra_headers", {}))
 
-    # OpenAI-compatible (Groq / OpenRouter / OpenAI / Custom)
     if style == "openai":
         headers["Authorization"] = f"Bearer {key}"
         body = {
@@ -174,7 +128,6 @@ async def call_llm(messages: list, system: str = "") -> str:
             r.raise_for_status()
             return r.json()["choices"][0]["message"]["content"]
 
-    # Google Gemini
     elif style == "gemini":
         contents = [
             {"role": "user" if m["role"] == "user" else "model",
@@ -192,7 +145,6 @@ async def call_llm(messages: list, system: str = "") -> str:
             r.raise_for_status()
             return r.json()["candidates"][0]["content"]["parts"][0]["text"]
 
-    # Anthropic Claude
     elif style == "anthropic":
         headers.update({"x-api-key": key, "anthropic-version": "2023-06-01"})
         body = {"model": model, "max_tokens": 1024, "system": system, "messages": messages, "temperature": 0.1}
@@ -201,7 +153,6 @@ async def call_llm(messages: list, system: str = "") -> str:
             r.raise_for_status()
             return r.json()["content"][0]["text"]
 
-    # Ollama (local)
     elif style == "ollama":
         body = {
             "model": model, "stream": False,
@@ -216,30 +167,24 @@ async def call_llm(messages: list, system: str = "") -> str:
     raise HTTPException(500, f"Unsupported style: {style}")
 
 
-# ════════════════════════════════════════════════════════════════════════
-#   PROMPTS
-# ════════════════════════════════════════════════════════════════════════
-
 DB_SCHEMA = """
 Tables in the SAP Order-to-Cash SQLite database:
 
 1. sales_order_headers
    - salesOrder (PK), salesOrderType, salesOrganization, soldToParty (FK→business_partners),
-     creationDate, totalNetAmount, overallDeliveryStatus (C=complete A=partial ''=none),
-     overallOrdReltdBillgStatus (C=fully billed A=partial ''=not billed),
+     creationDate, totalNetAmount, overallDeliveryStatus, overallOrdReltdBillgStatus,
      transactionCurrency, requestedDeliveryDate, customerPaymentTerms
 
 2. sales_order_items
-   - salesOrder (FK→sales_order_headers), salesOrderItem, material (FK→products),
+   - salesOrder (FK), salesOrderItem, material (FK→products),
      requestedQuantity, netAmount, materialGroup, productionPlant, storageLocation
 
 3. outbound_delivery_headers
    - deliveryDocument (PK), creationDate, shippingPoint,
-     overallGoodsMovementStatus (C=issued A=partial ''=none),
-     overallPickingStatus, deliveryBlockReason
+     overallGoodsMovementStatus, overallPickingStatus, deliveryBlockReason
 
 4. outbound_delivery_items
-   - deliveryDocument (FK→outbound_delivery_headers), deliveryDocumentItem,
+   - deliveryDocument (FK), deliveryDocumentItem,
      referenceSdDocument (FK→sales_order_headers.salesOrder),
      referenceSdDocumentItem, actualDeliveryQuantity, plant, storageLocation
 
@@ -250,10 +195,9 @@ Tables in the SAP Order-to-Cash SQLite database:
      accountingDocument (FK→journal_entries), soldToParty (FK→business_partners)
 
 6. billing_document_items
-   - billingDocument (FK→billing_document_headers), billingDocumentItem,
-     material (FK→products), billingQuantity, netAmount, transactionCurrency,
-     referenceSdDocument (FK→outbound_delivery_headers.deliveryDocument),
-     referenceSdDocumentItem
+   - billingDocument (FK), billingDocumentItem, material (FK→products),
+     billingQuantity, netAmount, transactionCurrency,
+     referenceSdDocument (FK→outbound_delivery_headers.deliveryDocument)
 
 7. journal_entries
    - accountingDocument (PK part), accountingDocumentItem, companyCode, fiscalYear,
@@ -301,10 +245,6 @@ RULES:
 ANSWER_SYSTEM = "You are a concise business analyst. Summarize SQL query results in plain English. Use bullet points for lists. Never mention SQL or databases."
 
 
-# ════════════════════════════════════════════════════════════════════════
-#   DATABASE
-# ════════════════════════════════════════════════════════════════════════
-
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -324,7 +264,6 @@ def run_sql(sql: str):
 
 
 def parse_llm_json(raw: str) -> dict:
-    """Extract JSON from LLM response, handling markdown fences."""
     clean = raw.strip()
     if clean.startswith("```"):
         clean = re.sub(r"```[a-z]*\n?", "", clean).strip("` \n")
@@ -333,10 +272,6 @@ def parse_llm_json(raw: str) -> dict:
         return json.loads(m.group(0))
     return json.loads(clean)
 
-
-# ════════════════════════════════════════════════════════════════════════
-#   ROUTES
-# ════════════════════════════════════════════════════════════════════════
 
 class ChatRequest(BaseModel):
     message: str
@@ -354,35 +289,41 @@ async def health():
     }
 
 
+@app.options("/chat")
+async def chat_options():
+    response = JSONResponse(content={})
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     history = [{"role": t["role"], "content": t["content"]} for t in req.history[-6:]]
     history.append({"role": "user", "content": req.message})
 
-    # Step 1 — NL → SQL
     raw = await call_llm(history, system=SYSTEM_PROMPT)
     try:
         parsed = parse_llm_json(raw)
     except Exception:
-        return {"type": "off_topic", "message": "This system only answers questions about the SAP Order-to-Cash dataset."}
+        return JSONResponse(content={"type": "off_topic", "message": "This system only answers questions about the SAP Order-to-Cash dataset."})
 
     if parsed.get("type") == "off_topic":
-        return parsed
+        return JSONResponse(content=parsed)
     if parsed.get("type") != "query" or not parsed.get("sql"):
-        return {"type": "error", "message": "Could not generate a valid query."}
+        return JSONResponse(content={"type": "error", "message": "Could not generate a valid query."})
 
-    # Step 2 — Execute SQL
     sql = parsed["sql"]
     try:
         cols, rows = run_sql(sql)
     except Exception as e:
-        return {"type": "error", "message": str(e), "sql": sql}
+        return JSONResponse(content={"type": "error", "message": str(e), "sql": sql})
 
-    # Step 3 — Results → Natural language
     summary = f'User asked: "{req.message}"\nSQL: {sql}\nRows ({len(rows)}): {json.dumps(rows[:20], indent=2)}'
     answer = await call_llm([{"role": "user", "content": summary}], system=ANSWER_SYSTEM)
 
-    return {
+    result = {
         "type": "answer",
         "answer": answer,
         "sql": sql,
@@ -391,6 +332,9 @@ async def chat(req: ChatRequest):
         "columns": cols,
         "data": rows[:50],
     }
+    response = JSONResponse(content=result)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
 
 
 @app.get("/graph")
