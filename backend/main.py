@@ -28,7 +28,7 @@ LLM_PROVIDER = "openrouter"
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL   = "llama-3.3-70b-versatile"
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
 OPENROUTER_MODEL = "meta-llama/llama-3.3-8b-instruct:free"
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY_HERE")
